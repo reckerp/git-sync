@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Sync clones url into dir, or fast-forwards dir if it already holds a clone.
@@ -32,6 +33,9 @@ func Sync(ctx context.Context, url, dir string) error {
 
 func run(ctx context.Context, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", args...)
+	// Interrupt rather than kill on cancel, so an aborted clone removes its half-written directory.
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
+	cmd.WaitDelay = 10 * time.Second
 	// The daemon has no terminal; fail instead of hanging on a credential prompt.
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.CombinedOutput()
