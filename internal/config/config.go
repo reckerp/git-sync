@@ -142,11 +142,8 @@ func Append(path string, cfg *Config, r Repo) error {
 	if err != nil {
 		return err
 	}
-	if _, err := f.Write(buf.Bytes()); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
+	_, err = f.Write(buf.Bytes())
+	return errors.Join(err, f.Close())
 }
 
 // ExpandHome replaces a leading "~" with the user's home directory.

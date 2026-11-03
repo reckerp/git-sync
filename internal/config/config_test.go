@@ -77,14 +77,13 @@ func TestAppendCreatesThenPreservesFile(t *testing.T) {
 	if err := Append(path, cfg, Repo{Source: "a/one"}); err != nil {
 		t.Fatal(err)
 	}
-	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
-	f.WriteString("# keep me\n")
-	f.Close()
+	raw, _ := os.ReadFile(path)
+	writeFile(t, path, string(raw)+"# keep me\n")
 	if err := Append(path, cfg, Repo{Source: "a/two", Folder: "/x", Interval: Duration(90 * time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
 
-	raw, _ := os.ReadFile(path)
+	raw, _ = os.ReadFile(path)
 	if !strings.Contains(string(raw), "# keep me") || !strings.Contains(string(raw), `interval = "1h30m"`) {
 		t.Fatalf("unexpected file:\n%s", raw)
 	}

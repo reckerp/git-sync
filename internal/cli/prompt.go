@@ -22,7 +22,7 @@ func newPrompter(in io.Reader, out io.Writer) prompter {
 func (p prompter) ask(question string) (string, error) {
 	fmt.Fprint(p.out, question)
 	line, err := p.in.ReadString('\n')
-	if err != nil && !(errors.Is(err, io.EOF) && line != "") {
+	if err != nil && (!errors.Is(err, io.EOF) || line == "") {
 		return "", err
 	}
 	return strings.TrimSpace(line), nil
