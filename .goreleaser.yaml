@@ -55,6 +55,7 @@ brews:
     # Enables `brew services start git-sync` to run the background daemon.
     service: |
       run [opt_bin/"git-sync", "daemon"]
+      environment_variables PATH: std_service_path_env
       keep_alive true
       log_path var/"log/git-sync.log"
       error_log_path var/"log/git-sync.log"
