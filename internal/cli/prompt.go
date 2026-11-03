@@ -31,6 +31,9 @@ func (p prompter) ask(question string) (string, error) {
 // confirm asks a yes/no question that defaults to yes.
 func (p prompter) confirm(question string) (bool, error) {
 	answer, err := p.ask(question + " [Y/n] ")
+	if errors.Is(err, io.EOF) {
+		return true, nil // no input, e.g. stdin is /dev/null (which isTerminal cannot tell from a tty)
+	}
 	if err != nil {
 		return false, err
 	}
