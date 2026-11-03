@@ -9,12 +9,7 @@ import (
 )
 
 func TestSyncClonesThenPulls(t *testing.T) {
-	for k, v := range map[string]string{
-		"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
-		"GIT_CONFIG_GLOBAL": os.DevNull,
-	} {
-		t.Setenv(k, v)
-	}
+	isolateGit(t)
 	tmp := t.TempDir()
 	remote := filepath.Join(tmp, "remote.git")
 	work := filepath.Join(tmp, "work")
@@ -46,9 +41,7 @@ func TestSyncReportsGitErrors(t *testing.T) {
 
 func commitFile(t *testing.T, dir, name string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, dir, name, name)
 	git(t, "-C", dir, "add", name)
 	git(t, "-C", dir, "commit", "-m", name)
 	git(t, "-C", dir, "push", "origin", "HEAD:main")
@@ -64,6 +57,66 @@ func git(t *testing.T, args ...string) {
 func assertExists(t *testing.T, path string) {
 	t.Helper()
 	if _, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckSafeToDelete(t *testing.T) {
+	isolateGit(t)
+	ctx := context.Background()
+	for name, tc := range map[string]struct {
+		dirty func(t *testing.T, clone string)
+		safe  bool
+	}{
+		"clean": {func(*testing.T, string) {}, true},
+		"ignored": {func(t *testing.T, c string) {
+			writeFile(t, c, ".gitignore", "x")
+			git(t, "-C", c, "add", ".gitignore")
+			git(t, "-C", c, "commit", "-m", "ignore")
+			git(t, "-C", c, "push", "origin", "HEAD:main")
+			writeFile(t, c, "x", "")
+		}, true},
+		"untracked": {func(t *testing.T, c string) { writeFile(t, c, "new.txt", "") }, false},
+		"modified":  {func(t *testing.T, c string) { writeFile(t, c, "a.txt", "changed") }, false},
+		"unpushed": {func(t *testing.T, c string) {
+			writeFile(t, c, "b.txt", "")
+			git(t, "-C", c, "add", "b.txt")
+			git(t, "-C", c, "commit", "-m", "local")
+		}, false},
+		"stashed": {func(t *testing.T, c string) { writeFile(t, c, "a.txt", "changed"); git(t, "-C", c, "stash") }, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tmp := t.TempDir()
+			remote, clone := filepath.Join(tmp, "remote.git"), filepath.Join(tmp, "clone")
+			git(t, "init", "--bare", "-b", "main", remote)
+			git(t, "clone", remote, clone)
+			commitFile(t, clone, "a.txt")
+			tc.dirty(t, clone)
+
+			if err := CheckSafeToDelete(ctx, clone); (err == nil) != tc.safe {
+				t.Fatalf("safe = %v, err = %v", tc.safe, err)
+			}
+		})
+	}
+
+	if err := CheckSafeToDelete(ctx, t.TempDir()); err == nil {
+		t.Fatal("expected error for a folder that is not a clone")
+	}
+}
+
+func isolateGit(t *testing.T) {
+	t.Helper()
+	for k, v := range map[string]string{
+		"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+		"GIT_CONFIG_GLOBAL": os.DevNull,
+	} {
+		t.Setenv(k, v)
+	}
+}
+
+func writeFile(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

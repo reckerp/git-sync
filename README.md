@@ -41,6 +41,7 @@ git-sync sync                                 # clone or pull every repo
 git-sync sync git-sync                        # only the named repos
 git-sync sync -i                              # choose repos interactively
 git-sync remove git-sync                      # drop from config (alias rm); the clone stays on disk
+git-sync remove git-sync --delete             # also delete the clone, unless it has unsaved work
 git-sync daemon                               # foreground loop; syncs each repo on its interval
 ```
 
