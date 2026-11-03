@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -158,6 +159,70 @@ func Append(path string, cfg *Config, r Repo) error {
 	}
 	_, err = f.Write(buf.Bytes())
 	return errors.Join(err, f.Close())
+}
+
+// Remove deletes r's [[repos]] block from the config file at path.
+// It edits the text instead of re-encoding so comments and formatting elsewhere survive.
+func Remove(path string, r Repo) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var cfg Config
+	if _, err := toml.Decode(string(raw), &cfg); err != nil {
+		return fmt.Errorf("remove from %s: %w", path, err)
+	}
+	idx := slices.Index(cfg.Repos, r)
+	if idx < 0 {
+		return fmt.Errorf("%s is not in %s", r.Source, path)
+	}
+	want := slices.Delete(slices.Clone(cfg.Repos), idx, idx+1)
+
+	lines := strings.SplitAfter(string(raw), "\n")
+	start, end, n := -1, len(lines), 0
+	for i, l := range lines {
+		t := strings.TrimSpace(l)
+		if start >= 0 && strings.HasPrefix(t, "[") {
+			end = i
+			break
+		}
+		if strings.HasPrefix(t, "[[repos]]") {
+			if n == idx {
+				start = i
+			}
+			n++
+		}
+	}
+	// Blank lines and comments right above the next table belong to it, so keep them.
+	for start >= 0 && end > start+1 && isBlankOrComment(lines[end-1]) {
+		end--
+	}
+	if start > 0 && strings.TrimSpace(lines[start-1]) == "" {
+		start-- // drop the separating blank line too
+	}
+
+	// Refuse rather than corrupt the file if the text layout did not match the parsed config,
+	// e.g. repos written as an inline array.
+	var out string
+	if start >= 0 {
+		out = strings.Join(slices.Delete(lines, start, end), "")
+	}
+	var check Config
+	if _, err := toml.Decode(out, &check); start < 0 || err != nil || !slices.Equal(check.Repos, want) {
+		return fmt.Errorf("cannot safely remove %s from %s; edit the file by hand", r.Source, path)
+	}
+
+	// Write to a temp file and rename, so a crash cannot leave a half-written config.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(out), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func isBlankOrComment(line string) bool {
+	t := strings.TrimSpace(line)
+	return t == "" || strings.HasPrefix(t, "#")
 }
 
 // ExpandHome replaces a leading "~" with the user's home directory.

@@ -24,6 +24,6 @@ func newRootCmd(version string) *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&cfgPath, "config", defaultPath, "path to the config file")
 
-	root.AddCommand(newAddCmd(&cfgPath), newSyncCmd(&cfgPath), newDaemonCmd(&cfgPath))
+	root.AddCommand(newAddCmd(&cfgPath), newSyncCmd(&cfgPath), newRemoveCmd(&cfgPath), newDaemonCmd(&cfgPath))
 	return root
 }

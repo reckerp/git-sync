@@ -151,3 +151,66 @@ func writeFile(t *testing.T, path, body string) {
 		t.Fatal(err)
 	}
 }
+
+func TestRemoveKeepsOtherText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	writeFile(t, path, `# my repos
+folder = "/src"
+
+[[repos]]
+repo = "a/one"
+
+[[repos]]
+repo = "a/two"
+interval = "5m"
+
+# work
+[[repos]]
+repo = "a/three"
+`)
+	cfg, _ := Load(path)
+	if err := Remove(path, cfg.Repos[1]); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	want := `# my repos
+folder = "/src"
+
+[[repos]]
+repo = "a/one"
+
+# work
+[[repos]]
+repo = "a/three"
+`
+	if string(raw) != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", raw, want)
+	}
+
+	// Removing the last block works too.
+	cfg, _ = Load(path)
+	if err := Remove(path, cfg.Repos[1]); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := Load(path); len(got.Repos) != 1 || got.Repos[0].Source != "a/one" {
+		t.Fatalf("unexpected repos: %+v", got.Repos)
+	}
+}
+
+func TestRemoveRefusesUnsafeEdits(t *testing.T) {
+	for name, body := range map[string]string{
+		"inline array": "repos = [{repo = \"a/b\"}]\n",
+		"missing repo": "[[repos]]\nrepo = \"x/y\"\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			writeFile(t, path, body)
+			if err := Remove(path, Repo{Source: "a/b"}); err == nil {
+				t.Fatal("expected error")
+			}
+			if raw, _ := os.ReadFile(path); string(raw) != body {
+				t.Fatalf("file changed:\n%s", raw)
+			}
+		})
+	}
+}
