@@ -2,11 +2,6 @@
 package cli
 
 import (
-	"context"
-	"os"
-	"os/signal"
-	"syscall"
-
 	"github.com/spf13/cobra"
 
 	"github.com/reckerp/git-sync/internal/config"
@@ -14,9 +9,7 @@ import (
 
 // Execute runs the CLI and returns any error after cobra has printed it.
 func Execute(version string) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	return newRootCmd(version).ExecuteContext(ctx)
+	return newRootCmd(version).Execute()
 }
 
 func newRootCmd(version string) *cobra.Command {
