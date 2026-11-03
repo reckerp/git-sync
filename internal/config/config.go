@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -67,10 +66,11 @@ func (c *Config) Validate() error {
 		if err != nil {
 			return err
 		}
-		if other, ok := seen[dir]; ok {
+		key := strings.ToLower(dir) // macOS file systems are case-insensitive by default
+		if other, ok := seen[key]; ok {
 			return fmt.Errorf("repos %q and %q would both sync to %s", other, r.Source, dir)
 		}
-		seen[dir] = r.Source
+		seen[key] = r.Source
 	}
 	return nil
 }
@@ -95,6 +95,9 @@ func (c *Config) Dir(r Repo) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if !filepath.IsAbs(folder) {
+		return "", fmt.Errorf("folder %q must be an absolute path or start with ~", folder)
+	}
 	return filepath.Join(folder, r.Name()), nil
 }
 
@@ -106,24 +109,31 @@ func (c *Config) IntervalFor(r Repo) time.Duration {
 	return time.Duration(c.Interval)
 }
 
-// Name is the repository name without owner or .git suffix, e.g. "git-sync".
+// Name is the repository name without host, owner or .git suffix, e.g. "git-sync".
 func (r Repo) Name() string {
-	return path.Base(strings.TrimSuffix(r.Source, ".git"))
+	s := strings.TrimSuffix(strings.TrimRight(r.Source, "/"), ".git")
+	return s[strings.LastIndexAny(s, "/:")+1:]
 }
 
 // CloneURL expands "owner/name" to a GitHub SSH URL and returns anything else unchanged.
 func (r Repo) CloneURL() string {
-	if strings.Contains(r.Source, ":") {
-		return r.Source
+	s := r.Source
+	// URLs, scp-style addresses and local paths (/x, ./x, ~/x, a/b/c) go to git as written.
+	if strings.Contains(s, ":") || strings.Count(s, "/") != 1 || strings.ContainsAny(s[:1], "/.~") {
+		return s
 	}
-	return "git@github.com:" + r.Source + ".git"
+	return "git@github.com:" + strings.TrimSuffix(s, ".git") + ".git"
 }
 
 // Append adds r to the config file at path, creating the file with defaults if needed.
 // It appends instead of rewriting so comments and formatting in the file survive.
 func Append(path string, cfg *Config, r Repo) error {
+	old, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 	var buf bytes.Buffer
-	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+	if errors.Is(err, fs.ErrNotExist) {
 		if err := toml.NewEncoder(&buf).Encode(Config{Folder: cfg.Folder, Interval: cfg.Interval}); err != nil {
 			return err
 		}
@@ -136,6 +146,10 @@ func Append(path string, cfg *Config, r Repo) error {
 		Repos []Repo `toml:"repos"`
 	}{[]Repo{r}}); err != nil {
 		return err
+	}
+	// [[repos]] cannot extend repos written another way, e.g. as an inline array.
+	if _, err := toml.Decode(string(old)+buf.String(), &Config{}); err != nil {
+		return fmt.Errorf("cannot append to %s: %w", path, err)
 	}
 
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)

@@ -56,6 +56,8 @@ interval = "5m"
 func TestLoadRejectsBadConfig(t *testing.T) {
 	for name, body := range map[string]string{
 		"duplicate dir":    "[[repos]]\nrepo = \"a/dots\"\n[[repos]]\nrepo = \"b/dots\"\n",
+		"case-only dup":    "[[repos]]\nrepo = \"a/Dots\"\n[[repos]]\nrepo = \"b/dots\"\n",
+		"relative folder":  "folder = \"src\"\n[[repos]]\nrepo = \"a/b\"\n",
 		"empty source":     "[[repos]]\nfolder = \"/x\"\n",
 		"invalid interval": "interval = \"soon\"\n",
 		"zero interval":    "interval = \"0s\"\n",
@@ -96,11 +98,27 @@ func TestAppendCreatesThenPreservesFile(t *testing.T) {
 	}
 }
 
+func TestAppendRefusesInlineRepos(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	body := "repos = [{repo = \"a/b\"}]\n"
+	writeFile(t, path, body)
+	if err := Append(path, &Config{}, Repo{Source: "c/d"}); err == nil {
+		t.Fatal("expected error")
+	}
+	if raw, _ := os.ReadFile(path); string(raw) != body {
+		t.Fatalf("file changed:\n%s", raw)
+	}
+}
+
 func TestRepoNameAndCloneURL(t *testing.T) {
 	for _, tc := range []struct{ src, name, url string }{
 		{"reckerp/git-sync", "git-sync", "git@github.com:reckerp/git-sync.git"},
 		{"git@github.com:a/b.git", "b", "git@github.com:a/b.git"},
 		{"https://example.com/a/c.git", "c", "https://example.com/a/c.git"},
+		{"https://example.com/a/c.git/", "c", "https://example.com/a/c.git/"},
+		{"git@host:solo.git", "solo", "git@host:solo.git"},
+		{"/srv/git/d.git", "d", "/srv/git/d.git"},
+		{"reckerp/e.git", "e", "git@github.com:reckerp/e.git"},
 	} {
 		r := Repo{Source: tc.src}
 		if r.Name() != tc.name || r.CloneURL() != tc.url {
