@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -57,7 +58,9 @@ func findRepos(cfg *config.Config, names []string) ([]config.Repo, error) {
 		if !ok {
 			return nil, fmt.Errorf("no repo named %q in config", name)
 		}
-		repos = append(repos, r)
+		if !slices.Contains(repos, r) { // two git runs in one directory would collide
+			repos = append(repos, r)
+		}
 	}
 	return repos, nil
 }

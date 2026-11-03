@@ -3,7 +3,17 @@ package cli
 import (
 	"slices"
 	"testing"
+
+	"github.com/reckerp/git-sync/internal/config"
 )
+
+func TestFindReposDedupes(t *testing.T) {
+	cfg := &config.Config{Repos: []config.Repo{{Source: "reckerp/git-sync"}}}
+	got, err := findRepos(cfg, []string{"git-sync", "reckerp/git-sync"})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}
 
 func TestParseSelection(t *testing.T) {
 	for in, want := range map[string][]int{"": nil, "1": {0}, "3, 1 3": {2, 0}, "1,2,3": {0, 1, 2}} {
