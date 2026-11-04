@@ -213,6 +213,10 @@ func Remove(path string, r Repo) error {
 	}
 
 	// Write to a temp file and rename, so a crash cannot leave a half-written config.
+	// Rename the real file, not a symlink to it (e.g. a config linked from a dotfiles repo).
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(out), 0o644); err != nil {
 		return err

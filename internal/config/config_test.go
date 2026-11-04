@@ -214,3 +214,21 @@ func TestRemoveRefusesUnsafeEdits(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoveKeepsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	real, link := filepath.Join(dir, "real.toml"), filepath.Join(dir, "config.toml")
+	writeFile(t, real, "[[repos]]\nrepo = \"a/one\"\n\n[[repos]]\nrepo = \"a/two\"\n")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := Remove(link, Repo{Source: "a/one"}); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("config is no longer a symlink: %v", err)
+	}
+	if got, _ := Load(link); len(got.Repos) != 1 || got.Repos[0].Source != "a/two" {
+		t.Fatalf("unexpected repos: %+v", got.Repos)
+	}
+}
