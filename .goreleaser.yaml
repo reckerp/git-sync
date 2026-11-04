@@ -43,6 +43,8 @@ brews:
     repository:
       owner: reckerp
       name: homebrew-tap
+    # The tap has a Formula/ folder, and brew ignores top-level formulae when it exists.
+    directory: Formula
     homepage: https://github.com/reckerp/git-sync
     description: Declare your git repositories in TOML and keep them cloned and up to date.
     commit_author:
