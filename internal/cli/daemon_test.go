@@ -33,3 +33,13 @@ func TestSyncDue(t *testing.T) {
 		t.Error("repo not yet due was synced")
 	}
 }
+
+func TestWithWallTimeout(t *testing.T) {
+	ctx, cancel := withWallTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("context was not cancelled after its deadline")
+	}
+}

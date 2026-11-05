@@ -75,7 +75,7 @@ func syncDue(ctx context.Context, cfg *config.Config, lastSync map[string]time.T
 		}
 	}
 	// shortcut: due repos sync as one batch, so a slow clone delays the others; schedule repos independently if that bites.
-	ctx, cancel := context.WithTimeout(ctx, syncTimeout)
+	ctx, cancel := withWallTimeout(ctx, syncTimeout)
 	defer cancel()
 	for _, res := range syncRepos(ctx, cfg, due) {
 		// Record failures too, so a broken repo retries on its interval rather than every tick.
@@ -86,4 +86,27 @@ func syncDue(ctx context.Context, cfg *config.Config, lastSync map[string]time.T
 			slog.Info("synced", "repo", res.repo.Source, "dir", res.dir)
 		}
 	}
+}
+
+// withWallTimeout is context.WithTimeout measured on the wall clock. Go timers pause while
+// the machine sleeps, so a plain timeout could leave a sync hung on a dead connection for hours.
+func withWallTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	deadline := time.Now().Round(0).Add(d)
+	go func() {
+		t := time.NewTicker(time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if !time.Now().Round(0).Before(deadline) {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return ctx, cancel
 }
