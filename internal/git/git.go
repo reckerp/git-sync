@@ -21,14 +21,31 @@ func Sync(ctx context.Context, url, dir string) error {
 	_, err := os.Stat(filepath.Join(dir, ".git"))
 	switch {
 	case err == nil:
-		return run(ctx, "-C", dir, "pull", "--ff-only", "--quiet")
+		return run(ctx, sshEnv(ctx, dir), "-C", dir, "pull", "--ff-only", "--quiet")
 	case !errors.Is(err, fs.ErrNotExist):
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+	parent := filepath.Dir(dir)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
 	}
-	return run(ctx, "clone", "--quiet", url, dir)
+	return run(ctx, sshEnv(ctx, parent), "clone", "--quiet", url, dir)
+}
+
+// keepaliveSSH makes ssh give up on a dead connection, e.g. one the Mac slept through,
+// instead of waiting on it forever.
+const keepaliveSSH = "ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
+
+// sshEnv returns a GIT_SSH_COMMAND with keepalives for git run in dir,
+// unless the user already chose an ssh command.
+func sshEnv(ctx context.Context, dir string) []string {
+	if os.Getenv("GIT_SSH_COMMAND") != "" || os.Getenv("GIT_SSH") != "" {
+		return nil
+	}
+	if out, _ := output(ctx, nil, "-C", dir, "config", "--get", "core.sshCommand"); out != "" {
+		return nil
+	}
+	return []string{"GIT_SSH_COMMAND=" + keepaliveSSH}
 }
 
 // CheckSafeToDelete returns an error if dir is not a clone or holds work that exists
@@ -46,7 +63,7 @@ func CheckSafeToDelete(ctx context.Context, dir string) error {
 		{"commits not pushed to any remote", []string{"log", "--branches", "--not", "--remotes", "--oneline"}},
 		{"stashed changes", []string{"stash", "list"}},
 	} {
-		out, err := output(ctx, append([]string{"-C", dir}, c.args...)...)
+		out, err := output(ctx, nil, append([]string{"-C", dir}, c.args...)...)
 		if err != nil {
 			return err
 		}
@@ -57,19 +74,19 @@ func CheckSafeToDelete(ctx context.Context, dir string) error {
 	return nil
 }
 
-func run(ctx context.Context, args ...string) error {
-	_, err := output(ctx, args...)
+func run(ctx context.Context, env []string, args ...string) error {
+	_, err := output(ctx, env, args...)
 	return err
 }
 
-// output runs git and returns its trimmed combined output.
-func output(ctx context.Context, args ...string) (string, error) {
+// output runs git with env added to the environment and returns its trimmed combined output.
+func output(ctx context.Context, env []string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	// Interrupt rather than kill on cancel, so an aborted clone removes its half-written directory.
 	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
 	cmd.WaitDelay = 10 * time.Second
 	// The daemon has no terminal; fail instead of hanging on a credential prompt.
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0"), env...)
 	out, err := cmd.CombinedOutput()
 	out = bytes.TrimSpace(out)
 	if err != nil {

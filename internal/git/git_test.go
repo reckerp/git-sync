@@ -120,3 +120,27 @@ func writeFile(t *testing.T, dir, name, body string) {
 		t.Fatal(err)
 	}
 }
+
+func TestSSHEnv(t *testing.T) {
+	isolateGit(t)
+	t.Setenv("GIT_SSH", "")
+	ctx := context.Background()
+	repo := t.TempDir()
+	git(t, "init", "-q", repo)
+
+	t.Setenv("GIT_SSH_COMMAND", "")
+	if got := sshEnv(ctx, repo); len(got) != 1 || got[0] != "GIT_SSH_COMMAND="+keepaliveSSH {
+		t.Errorf("default: got %v", got)
+	}
+
+	t.Setenv("GIT_SSH_COMMAND", "ssh -i key")
+	if got := sshEnv(ctx, repo); got != nil {
+		t.Errorf("GIT_SSH_COMMAND set: got %v", got)
+	}
+
+	t.Setenv("GIT_SSH_COMMAND", "")
+	git(t, "-C", repo, "config", "core.sshCommand", "ssh -i key")
+	if got := sshEnv(ctx, repo); got != nil {
+		t.Errorf("core.sshCommand set: got %v", got)
+	}
+}
